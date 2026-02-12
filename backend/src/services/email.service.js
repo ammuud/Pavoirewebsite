@@ -1,26 +1,29 @@
-import nodemailer from 'nodemailer';
 import { env } from '../config/env.js';
 
-const hasSmtp = Boolean(env.smtpHost && env.smtpUser && env.smtpPass);
-
-const transporter = hasSmtp
-  ? nodemailer.createTransport({
-      host: env.smtpHost,
-      port: env.smtpPort,
-      secure: env.smtpPort === 465,
-      auth: {
-        user: env.smtpUser,
-        pass: env.smtpPass
-      }
-    })
-  : null;
-
-const fromEmail = env.smtpUser || 'noreply@pavoire.com';
+const canSendWithResend = Boolean(env.resendApiKey && env.resendFromEmail);
 
 export const sendEmail = async ({ to, subject, html }) => {
-  if (!transporter) {
-    console.log(`[EMAIL MOCK] to=${to} subject=${subject}`);
+  if (!canSendWithResend) {
+    console.log(`[EMAIL MOCK] Missing RESEND config. to=${to} subject=${subject}`);
     return;
   }
-  await transporter.sendMail({ from: fromEmail, to, subject, html });
+
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.resendApiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from: env.resendFromEmail,
+      to: [to],
+      subject,
+      html
+    })
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Resend email failed: ${response.status} ${text}`);
+  }
 };

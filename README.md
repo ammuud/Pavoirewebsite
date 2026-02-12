@@ -1,6 +1,6 @@
 # Pavoire — Production-Ready Luxury Jewellery E-commerce
 
-Pavoire is a full-stack jewellery e-commerce platform with a premium feminine glassmorphism UI, OTP-only email authentication, Razorpay checkout gated by OTP verification, PostgreSQL persistence, admin order management, invoice generation, QR order tagging, and deployment-ready documentation.
+Pavoire is a full-stack jewellery e-commerce platform with a premium feminine glassmorphism UI, OTP-only email authentication (via Resend), Razorpay checkout gated by OTP verification, PostgreSQL persistence, admin order management, invoice generation, QR order tagging, and deployment-ready documentation.
 
 ## Monorepo Structure
 
@@ -78,7 +78,7 @@ Pavoirewebsite/
 1. Add products to cart.
 2. Click checkout.
 3. Popup asks for email.
-4. Backend sends OTP to email.
+4. Backend sends OTP to email using Resend.
 5. User verifies OTP.
 6. Pay Now button appears only after OTP verification.
 7. Razorpay order opens (or mock-mode fallback if keys missing).
@@ -109,9 +109,6 @@ Pavoirewebsite/
   - QR code saved in `orders.qr_code`
   - Cart cleared
 
-### Address Input
-- Checkout input supports Places-ready UX; backend exposes `GOOGLE_PLACES_API_KEY` through public config API for frontend autocomplete wiring.
-
 ## API Overview
 
 - `POST /api/auth/request-otp`
@@ -140,57 +137,46 @@ cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env.local
 ```
 
-Fill the backend env values for:
-- Postgres `DATABASE_URL`
-- SMTP credentials
-- Razorpay keys
-- JWT secret
-- Google Places key
+### 3) Fill your private keys/secrets manually in `backend/.env`
+```env
+PORT=4000
+FRONTEND_URL=http://localhost:3000
+DATABASE_URL=
+JWT_SECRET=
+OTP_EXPIRY_MINUTES=10
+RESEND_API_KEY=
+RESEND_FROM_EMAIL=
+ADMIN_EMAIL=
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+GOOGLE_PLACES_API_KEY=
+```
 
-### 3) Run migrations and seed
+### 4) Run migrations and seed
 ```bash
 npm run db:migrate --workspace backend
 npm run db:seed --workspace backend
 ```
 
-### 4) Start full stack
+### 5) Start full stack
 ```bash
 npm run dev
 ```
 
-- Frontend: `http://localhost:3000`
-- Backend: `http://localhost:4000`
+## Deploy
+- Frontend on Vercel/Netlify (`frontend/` root)
+- Backend on Render/Railway (`backend/` root)
+- Attach PostgreSQL and set env vars in provider dashboard
 
-## Deployment
+## What you need to fill by yourself (important)
+These values are intentionally left blank for your privacy/security:
+1. `DATABASE_URL` (your PostgreSQL connection string)
+2. `JWT_SECRET` (long random secret)
+3. `RESEND_API_KEY` (from your Resend account)
+4. `RESEND_FROM_EMAIL` (verified sender domain/email in Resend)
+5. `ADMIN_EMAIL` (your admin inbox)
+6. `RAZORPAY_KEY_ID` (from your Razorpay dashboard)
+7. `RAZORPAY_KEY_SECRET` (from your Razorpay dashboard)
+8. `GOOGLE_PLACES_API_KEY` (Google Cloud Places API key)
 
-### Frontend (Vercel / Netlify)
-- Root: `frontend/`
-- Build command: `npm run build`
-- Output: Next.js default
-- Set `NEXT_PUBLIC_API_BASE_URL` to deployed backend URL
-
-### Backend (Render / Railway / Supabase functions alternative)
-- Root: `backend/`
-- Build command: `npm install`
-- Start command: `npm start`
-- Attach managed PostgreSQL
-- Set all `.env.example` values in provider dashboard
-
-### Database
-- Apply `backend/sql/schema.sql` migration in production DB
-- Run `db:seed` once or replace with production catalog import
-
-## Production Hardening Checklist
-
-- [ ] Enable HTTPS only and strict CORS allow-list
-- [ ] Use Redis for OTP throttling and attempt limits
-- [ ] Add rate limiting on OTP and auth endpoints
-- [ ] Add proper PDF invoice generator service
-- [ ] Replace mock payment branch by enforcing live Razorpay keys
-- [ ] Add full Google Places autocomplete component
-- [ ] Add unit/integration/e2e tests + CI pipeline
-- [ ] Add object storage/CDN for product images
-
----
-
-Built as a professional full-stack foundation suitable for real-world extension into a full production commerce system.
+After filling these, your OTP + payment flow will run with your own accounts.

@@ -9,38 +9,69 @@ export default function CheckoutModal({ onClose, onSuccess }) {
   const [address, setAddress] = useState('');
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [orderPayload, setOrderPayload] = useState(null);
   const [razorpayConfig, setRazorpayConfig] = useState({ enabled: false, key: '' });
 
   useEffect(() => {
-    api.get('/config/public').then((c) => setRazorpayConfig(c.razorpay));
+    api.get('/config/public').then((c) => setRazorpayConfig(c.razorpay)).catch(() => setError('Config load failed.'));
   }, []);
 
+  useEffect(() => {
+    if (!razorpayConfig.enabled) return;
+    if (document.getElementById('razorpay-checkout-js')) return;
+
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-js';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, [razorpayConfig.enabled]);
+
   const requestOtp = async () => {
-    setLoading(true);
-    await api.post('/auth/request-otp', { email });
-    setStep(2);
-    setLoading(false);
+    try {
+      setError('');
+      setLoading(true);
+      await api.post('/auth/request-otp', { email });
+      setStep(2);
+    } catch {
+      setError('Unable to send OTP. Please check email or backend config.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const verifyOtp = async () => {
-    setLoading(true);
-    const result = await api.post('/auth/verify-otp', { email, otp });
-    localStorage.setItem('pavoire_token', result.token);
-    setStep(3);
-    setLoading(false);
+    try {
+      setError('');
+      setLoading(true);
+      const result = await api.post('/auth/verify-otp', { email, otp });
+      localStorage.setItem('pavoire_token', result.token);
+      setStep(3);
+    } catch {
+      setError('Invalid or expired OTP.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const preparePayment = async () => {
-    setLoading(true);
-    const order = await api.post('/orders/checkout/create-order', { address });
-    setOrderPayload(order);
-    setStep(4);
-    setLoading(false);
+    try {
+      setError('');
+      setLoading(true);
+      const order = await api.post('/orders/checkout/create-order', { address });
+      setOrderPayload(order);
+      setStep(4);
+    } catch {
+      setError('Could not create order. Make sure cart and address are valid.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const payNow = async () => {
     if (!orderPayload) return;
+
     if (!razorpayConfig.enabled) {
       await api.post('/orders/checkout/verify-payment', {
         orderId: orderPayload.orderId,
@@ -49,6 +80,11 @@ export default function CheckoutModal({ onClose, onSuccess }) {
         razorpaySignature: 'mock_signature'
       });
       onSuccess();
+      return;
+    }
+
+    if (!window.Razorpay) {
+      setError('Razorpay SDK not loaded yet. Please wait and try again.');
       return;
     }
 
@@ -76,6 +112,7 @@ export default function CheckoutModal({ onClose, onSuccess }) {
     <div className="fixed inset-0 bg-black/30 backdrop-blur-sm grid place-items-center p-4 z-40">
       <div className="glass-card w-full max-w-lg p-6">
         <h3 className="luxury-title text-2xl mb-4">Secure Checkout</h3>
+        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
         {step === 1 && (
           <div className="space-y-3">
             <p className="text-sm">Step 1: Enter your email to receive OTP.</p>
