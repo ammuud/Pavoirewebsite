@@ -1,0 +1,201 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { api } from '../lib/api';
+
+export default function CheckoutModal({ onClose, onSuccess }) {
+  const [email, setEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [address, setAddress] = useState('');
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [orderPayload, setOrderPayload] = useState(null);
+  const [razorpayConfig, setRazorpayConfig] = useState({ enabled: false, key: '' });
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
+
+  useEffect(() => {
+    api.get('/config/public').then((c) => setRazorpayConfig(c.razorpay)).catch(() => setError('Config load failed.'));
+  }, []);
+
+  useEffect(() => {
+    if (!razorpayConfig.enabled) return;
+    if (document.getElementById('razorpay-checkout-js')) return;
+
+    const script = document.createElement('script');
+    script.id = 'razorpay-checkout-js';
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, [razorpayConfig.enabled]);
+
+  useEffect(() => {
+    if (step !== 3 || address.trim().length < 3) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const query = encodeURIComponent(address.trim());
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${query}`,
+          {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' }
+          }
+        );
+        if (!response.ok) {
+          setAddressSuggestions([]);
+          return;
+        }
+        const data = await response.json();
+        setAddressSuggestions(Array.isArray(data) ? data : []);
+      } catch {
+        setAddressSuggestions([]);
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [address, step]);
+
+  const requestOtp = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      await api.post('/auth/request-otp', { email });
+      setStep(2);
+    } catch {
+      setError('Unable to send OTP. Please check email or backend config.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const verifyOtp = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      const result = await api.post('/auth/verify-otp', { email, otp });
+      localStorage.setItem('pavoire_token', result.token);
+      setStep(3);
+    } catch {
+      setError('Invalid or expired OTP.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const preparePayment = async () => {
+    try {
+      setError('');
+      setLoading(true);
+      const order = await api.post('/orders/checkout/create-order', { address });
+      setOrderPayload(order);
+      setStep(4);
+    } catch {
+      setError('Could not create order. Make sure cart and address are valid.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const payNow = async () => {
+    if (!orderPayload) return;
+
+    if (!razorpayConfig.enabled) {
+      await api.post('/orders/checkout/verify-payment', {
+        orderId: orderPayload.orderId,
+        razorpayOrderId: orderPayload.razorpayOrder.id,
+        razorpayPaymentId: `mock_pay_${Date.now()}`,
+        razorpaySignature: 'mock_signature'
+      });
+      onSuccess();
+      return;
+    }
+
+    if (!window.Razorpay) {
+      setError('Razorpay SDK not loaded yet. Please wait and try again.');
+      return;
+    }
+
+    const rzp = new window.Razorpay({
+      key: razorpayConfig.key,
+      amount: orderPayload.razorpayOrder.amount,
+      order_id: orderPayload.razorpayOrder.id,
+      name: 'Pavoire Jewellery',
+      description: `Order #${orderPayload.orderId}`,
+      handler: async (resp) => {
+        await api.post('/orders/checkout/verify-payment', {
+          orderId: orderPayload.orderId,
+          razorpayOrderId: resp.razorpay_order_id,
+          razorpayPaymentId: resp.razorpay_payment_id,
+          razorpaySignature: resp.razorpay_signature
+        });
+        onSuccess();
+      },
+      prefill: { email }
+    });
+    rzp.open();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/30 backdrop-blur-sm grid place-items-center p-4 z-40">
+      <div className="glass-card w-full max-w-lg p-6">
+        <h3 className="luxury-title text-2xl mb-4">Secure Checkout</h3>
+        {error && <p className="mb-3 text-sm text-red-600">{error}</p>}
+        {step === 1 && (
+          <div className="space-y-3">
+            <p className="text-sm">Step 1: Enter your email to receive OTP.</p>
+            <input className="glass-input" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+            <button className="glass-btn w-full" onClick={requestOtp} disabled={loading}>Send OTP</button>
+          </div>
+        )}
+        {step === 2 && (
+          <div className="space-y-3">
+            <p className="text-sm">Step 2: Verify OTP.</p>
+            <input className="glass-input" value={otp} onChange={(e) => setOtp(e.target.value)} placeholder="6-digit OTP" />
+            <button className="glass-btn w-full" onClick={verifyOtp} disabled={loading}>Verify OTP</button>
+          </div>
+        )}
+        {step === 3 && (
+          <div className="space-y-3">
+            <p className="text-sm">Step 3: Add delivery address (OpenStreetMap autocomplete).</p>
+            <div className="relative">
+              <input className="glass-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search & select address" />
+              {addressSuggestions.length > 0 && (
+                <div className="absolute z-50 mt-2 w-full rounded-2xl border border-white/70 bg-white/90 backdrop-blur-md shadow-glass max-h-52 overflow-auto">
+                  {addressSuggestions.map((s) => (
+                    <button
+                      type="button"
+                      key={s.place_id}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-rose-50"
+                      onClick={() => {
+                        setAddress(s.display_name);
+                        setAddressSuggestions([]);
+                      }}
+                    >
+                      {s.display_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button className="glass-btn w-full" onClick={preparePayment} disabled={loading}>Continue to Payment</button>
+          </div>
+        )}
+        {step === 4 && (
+          <div className="space-y-3">
+            <p className="text-sm">Step 4: OTP verified — Pay Now enabled.</p>
+            <button className="glass-btn w-full" onClick={payNow}>Pay Now</button>
+          </div>
+        )}
+        <button className="mt-4 text-xs underline" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+}
