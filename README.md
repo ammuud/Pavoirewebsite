@@ -149,8 +149,9 @@ RESEND_FROM_EMAIL=
 ADMIN_EMAIL=
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
-GOOGLE_PLACES_API_KEY=
 ```
+
+Address autocomplete is powered by OpenStreetMap (Nominatim), so no Google key is needed.
 
 ### 4) Run migrations and seed
 ```bash
@@ -177,6 +178,7 @@ These values are intentionally left blank for your privacy/security:
 5. `ADMIN_EMAIL` (your admin inbox)
 6. `RAZORPAY_KEY_ID` (from your Razorpay dashboard)
 7. `RAZORPAY_KEY_SECRET` (from your Razorpay dashboard)
-8. `GOOGLE_PLACES_API_KEY` (Google Cloud Places API key)
+
+Address autocomplete uses OpenStreetMap Nominatim and does not require a paid API key.
 
 After filling these, your OTP + payment flow will run with your own accounts.

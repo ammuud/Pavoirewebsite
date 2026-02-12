@@ -12,6 +12,5 @@ export const env = {
   resendFromEmail: process.env.RESEND_FROM_EMAIL || '',
   adminEmail: process.env.ADMIN_EMAIL || '',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
-  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
-  googlePlacesApiKey: process.env.GOOGLE_PLACES_API_KEY || ''
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || ''
 };

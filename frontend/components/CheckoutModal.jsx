@@ -12,6 +12,7 @@ export default function CheckoutModal({ onClose, onSuccess }) {
   const [error, setError] = useState('');
   const [orderPayload, setOrderPayload] = useState(null);
   const [razorpayConfig, setRazorpayConfig] = useState({ enabled: false, key: '' });
+  const [addressSuggestions, setAddressSuggestions] = useState([]);
 
   useEffect(() => {
     api.get('/config/public').then((c) => setRazorpayConfig(c.razorpay)).catch(() => setError('Config load failed.'));
@@ -27,6 +28,40 @@ export default function CheckoutModal({ onClose, onSuccess }) {
     script.async = true;
     document.body.appendChild(script);
   }, [razorpayConfig.enabled]);
+
+  useEffect(() => {
+    if (step !== 3 || address.trim().length < 3) {
+      setAddressSuggestions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const query = encodeURIComponent(address.trim());
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=5&q=${query}`,
+          {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' }
+          }
+        );
+        if (!response.ok) {
+          setAddressSuggestions([]);
+          return;
+        }
+        const data = await response.json();
+        setAddressSuggestions(Array.isArray(data) ? data : []);
+      } catch {
+        setAddressSuggestions([]);
+      }
+    }, 350);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [address, step]);
 
   const requestOtp = async () => {
     try {
@@ -129,8 +164,27 @@ export default function CheckoutModal({ onClose, onSuccess }) {
         )}
         {step === 3 && (
           <div className="space-y-3">
-            <p className="text-sm">Step 3: Add delivery address (Google Places ready input).</p>
-            <input className="glass-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search & select address" />
+            <p className="text-sm">Step 3: Add delivery address (OpenStreetMap autocomplete).</p>
+            <div className="relative">
+              <input className="glass-input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search & select address" />
+              {addressSuggestions.length > 0 && (
+                <div className="absolute z-50 mt-2 w-full rounded-2xl border border-white/70 bg-white/90 backdrop-blur-md shadow-glass max-h-52 overflow-auto">
+                  {addressSuggestions.map((s) => (
+                    <button
+                      type="button"
+                      key={s.place_id}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-rose-50"
+                      onClick={() => {
+                        setAddress(s.display_name);
+                        setAddressSuggestions([]);
+                      }}
+                    >
+                      {s.display_name}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button className="glass-btn w-full" onClick={preparePayment} disabled={loading}>Continue to Payment</button>
           </div>
         )}
